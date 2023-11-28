@@ -1,2 +1,5 @@
 # hanhwa
-한화생명 
+
+Hanhwa Ocean Predictive Maintenance Project
+
+09.01 - 12.31
