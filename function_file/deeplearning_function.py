@@ -42,7 +42,7 @@ def DEEPLEARNING(datafrmae, lookback, batch_size, front_or_back):
     X = X[:, 1:]
 
     if front_or_back == 'back':
-        train_len = int(len(X) * 0.9)
+        train_len = int(len(X) * 0.8)
         X_train = X[:train_len]
         X_test = X[train_len:]
         y_train = y[:train_len]
