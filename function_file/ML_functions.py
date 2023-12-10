@@ -5,10 +5,60 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from lightgbm import LGBMClassifier
+#from lightgbm import LGBMClassifier
 
 def trend(time, slope = 0):
     return time * slope
+
+def time_series_dataframe():
+    path_temp_gps = './temp_add_gps/'
+    list_temp_gps = os.listdir(path_temp_gps)
+
+    m1 = pd.read_csv(os.path.join(path_temp_gps + list_temp_gps[0]))
+    for i in range(1,8):
+        tmp = pd.read_csv(os.path.join(path_temp_gps + list_temp_gps[i]))
+        m1 = pd.concat([m1, tmp], axis = 0)
+
+    m1 = m1.reset_index(drop = True)
+    m1 = m1[m1['TEMP']>=243.07].reset_index(drop = True)
+    time_df = m1
+    time_df = time_df.loc[:, ['TEMP']]
+
+    for i in range(1,8):
+        globals()['df_'+str(i)+'_temp'] = time_df[60436*(i-1):60436*i].reset_index(drop = True)
+
+    N = 6
+    dx = (600 - df_1_temp['TEMP'].mean()) / N # ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ : 56.3785
+    dx_minute = dx / (len(df_1_temp)-1) # ï¿½Ð´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+
+    time = np.arange(len(df_1_temp))
+    slope = dx_minute * 2
+
+
+
+    for i in range(1,8):
+        mean = globals()['df_'+str(i)+'_temp']['TEMP'].mean()
+        diff  = 280.40784269309677 - mean
+        globals()['df_'+str(i)+'_temp']['TEMP'] += diff
+
+    for i in range(8,12):
+        globals()['df_'+str(i)+'_temp'] = globals()['df_'+str(i-5)+'_temp'].copy()
+
+    for i in range(2,12):
+        series = np.round(trend(time, slope = slope) + globals()['df_'+str(i)+'_temp']['TEMP'] + dx*(i-2), 3)
+        globals()['df_'+str(i)+'_temp']['TEMP'] = series
+
+    temp_len = len(df_1_temp) * 11
+    label = np.array([[i] * 60436 for i in range(1,12)]).reshape(-1)
+    temp_TIME = pd.DataFrame({'TIME' : np.arange(temp_len)})
+    temp_label = pd.DataFrame({'label' : label})
+    df_temp_all = pd.concat([df_1_temp, df_2_temp, df_3_temp, df_4_temp, df_5_temp, df_6_temp, df_7_temp, df_8_temp, df_9_temp, df_10_temp,df_11_temp], axis = 0)
+    df_temp_all = df_temp_all.reset_index(drop = True)
+    df_temp_all = pd.concat([df_temp_all,temp_label, temp_TIME], axis = 1)
+    return df_temp_all, temp_TIME, temp_label
+
+
+
 
 def make_dataframe(window_size, stride):
     path_temp_gps = './temp_add_gps/'
@@ -30,8 +80,8 @@ def make_dataframe(window_size, stride):
         globals()['df_'+str(i)+'_tmp'] = df[60436*(i-1):60436*i].reset_index().drop(columns=['index'], axis=0)
 
     N = 6
-    dx = (600 - df_1_tmp['TEMP'].mean()) / N # ÀüÃ¼ µ¥ÀÌÅÍ¿¡ ´ëÇÑ Áõ°¡À² : 56.3785
-    dx_minute = dx / (len(df_1_tmp)-1) # ºÐ´ç Áõ°¡À²
+    dx = (600 - df_1_tmp['TEMP'].mean()) / N # ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ : 56.3785
+    dx_minute = dx / (len(df_1_tmp)-1) # ï¿½Ð´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     time = np.arange(len(df_1_tmp))
     slope = dx_minute * 2
