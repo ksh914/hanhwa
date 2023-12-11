@@ -5,7 +5,11 @@ import time
 import math
 import matplotlib.pyplot as plt
 import warnings
-from function_file.ML_functions import * 
+from function_file.ML_functions import *
+SEED = 42
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+warnings.filterwarnings('ignore')
 
 
 class PositionalEncoding(nn.Module):
@@ -34,12 +38,11 @@ class TransAm(nn.Module):
     def __init__(self,feature_size=250,num_layers=1,dropout=0.1):
         super(TransAm, self).__init__()
         self.model_type = 'Transformer'
-        self.input_embedding  = nn.Linear(1,feature_size)
+        
         self.src_mask = None
-
         self.pos_encoder = PositionalEncoding(feature_size)
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=feature_size, nhead=10, dropout=dropout)
-        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
+        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)        
         self.decoder = nn.Linear(feature_size,1)
         self.init_weights()
 
@@ -49,13 +52,11 @@ class TransAm(nn.Module):
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self,src):
-        # src with shape (input_window, batch_len, 1)
         if self.src_mask is None or self.src_mask.size(0) != len(src):
             device = src.device
             mask = self._generate_square_subsequent_mask(len(src)).to(device)
             self.src_mask = mask
 
-        src = self.input_embedding(src) # linear transformation before positional embedding
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src,self.src_mask)#, self.src_mask)
         output = self.decoder(output)
@@ -101,28 +102,22 @@ from sklearn.preprocessing import MinMaxScaler
 scaler_train = MinMaxScaler()
 scaler_test = MinMaxScaler()
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-model = TransAm().to(device)
-lr = 0.001
-optimizer = torch.optim.Adam(params = model.parameters, lr = lr)
-criterion = nn.MSELoss()
-epochs = 100
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.98)
 
-def get_batch(data, idx, batch_size):
+
+def get_batch(data, idx, batch_size, input_window):
     seq_len = min(batch_size, len(data) -1 - idx)
     tmp = data[idx : idx + seq_len]
-    input = torch.stack(torch.stack([item[0] for item in data]).chunk(input_window,1))
-    target = torch.stack(torch.stack([item[1] for item in data]).chunk(input_window,1))
+    input = torch.stack(torch.stack([item[0] for item in tmp]).chunk(input_window,1))
+    target = torch.stack(torch.stack([item[1] for item in tmp]).chunk(input_window,1))
     return input, target
 
-def train(train_data, batch_size):
+def train(train_data, batch_size, epoch, input_window):
     model.train()
     total_loss = 0.0
     start_time = time.time()
 
     for batch, i in enumerate(range(0,len(train_data) -1, batch_size)):
-        data,target = get_batch(train_data, i, batch_size)
+        data,target = get_batch(train_data, i, batch_size, input_window)
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
@@ -145,7 +140,7 @@ def train(train_data, batch_size):
             start_time = time.time()
 
 
-def plot_and_loss(model, source, output_window):
+def plot_and_loss(model, source, output_window, input_window):
     model.eval()
     total_loss = 0.0
     test_result = torch.Tensor(0)
@@ -153,14 +148,14 @@ def plot_and_loss(model, source, output_window):
 
     with torch.no_grad():
         for i in range(0, len(source) -1):
-            data, target = get_batch(source, i, 1)
+            data, target = get_batch(source, i, 1,input_window)
             output = model(data)
-            total_loss += criterion(output, target).item()
+            total_loss += criterion(output[-output_window:], target[-output_window:]).item()
 
             test_result = torch.cat((test_result, output[-output_window:].view(-1).cpu()), 0)
             truth = torch.cat((truth, target[-output_window:].view(-1).cpu()),0)
 
-    test_result = scaler_test.inverse_transform(test_result.reshape(-1,1)).rehspae(-1)
+    test_result = scaler_test.inverse_transform(test_result.reshape(-1,1)).reshape(-1)
     truth = scaler_test.inverse_transform(truth.reshape(-1,1)).reshape(-1)
 
     plt.plot(test_result, color = 'red')
@@ -173,20 +168,30 @@ def plot_and_loss(model, source, output_window):
 
     return test_result, truth, total_loss / i
 
-def evaluate(model, source):
+def evaluate(model, source,input_window, output_window):
     model.eval()
     total_loss = 0.0
     batch_size = 512
     with torch.no_grad():
         for i in range(0, len(source)-1, batch_size):
-            data, targets = get_batch(source, i, batch_size)
+            data, targets = get_batch(source, i, batch_size, input_window)
             output = model(data)
-            total_loss += len(data[0]) * criterion(targets, output).cpu().item()
+            total_loss += len(data[0])* criterion(output[-output_window:], targets[-output_window:]).cpu().item()
 
     return total_loss / len(source)
 
-
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+lr = 0.001
+model = TransAm().to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+criterion = nn.MSELoss()
+epochs = 100
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.98)
+    
 def train_transformer(input_window, output_window, output_type, batch_size):
+
+
+    print("device : ", device)
     block_len = input_window + output_window
     batch_size = batch_size
     
@@ -218,16 +223,16 @@ def train_transformer(input_window, output_window, output_type, batch_size):
         
         start_time = time.time()
 
-        train(train_data, batch_size=batch_size)
+        train(train_data, batch_size=batch_size,  epoch=epoch, input_window=input_window)
 
         if (epochs % 20 == 0):
-            test_result, truth, val_loss =  plot_and_loss(model= model, source = test_data, output_window = output_window)
+            test_result, truth, val_loss =  plot_and_loss(model= model, source = test_data, output_window = output_window, input_window = input_window)
 
         else:
-            val_loss = evaluate(model, test_data)
+            val_loss = evaluate(model, test_data, input_window, output_window)
 
         print('-' * 90)
-        print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.5f} | valid ppl {:8.2f} |'.format(epoch, (time.time() - epoch_start_time),
+        print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.5f} | valid ppl {:8.2f} |'.format(epoch, (time.time() - start_time),
                                         val_loss, math.exp(val_loss)))
         print('-' * 90)
 
