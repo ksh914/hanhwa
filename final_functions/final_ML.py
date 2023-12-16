@@ -6,11 +6,12 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from lightgbm import LGBMClassifier
+from sklearn.model_selection import train_test_split
 
 def trend(time, slope = 0):
     return time * slope
 
-def time_series_dataframe():
+def time_series_dataframe_ML():
     path_temp_gps = './temp_add_gps/'
     list_temp_gps = os.listdir(path_temp_gps)
 
@@ -28,8 +29,8 @@ def time_series_dataframe():
         globals()['df_'+str(i)+'_temp'] = time_df[60436*(i-1):60436*i].reset_index(drop = True)
 
     N = 6
-    dx = (600 - df_1_temp['TEMP'].mean()) / N # ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ : 56.3785
-    dx_minute = dx / (len(df_1_temp)-1) # ï¿½Ğ´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    dx = (600 - df_1_temp['TEMP'].mean()) / N # ??? ??????? ???? ?????? : 56.3785
+    dx_minute = dx / (len(df_1_temp)-1) # ?¬Õ? ??????
 
     time = np.arange(len(df_1_temp))
     slope = dx_minute * 2
@@ -58,8 +59,6 @@ def time_series_dataframe():
     return df_temp_all, temp_TIME, temp_label
 
 
-
-
 def make_dataframe(window_size, stride):
     path_temp_gps = './temp_add_gps/'
     list_temp_gps = os.listdir(path_temp_gps)
@@ -80,8 +79,8 @@ def make_dataframe(window_size, stride):
         globals()['df_'+str(i)+'_tmp'] = df[60436*(i-1):60436*i].reset_index().drop(columns=['index'], axis=0)
 
     N = 6
-    dx = (600 - df_1_tmp['TEMP'].mean()) / N # ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ : 56.3785
-    dx_minute = dx / (len(df_1_tmp)-1) # ï¿½Ğ´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    dx = (600 - df_1_tmp['TEMP'].mean()) / N # ??? ??????? ???? ?????? : 56.3785
+    dx_minute = dx / (len(df_1_tmp)-1) # ?¬Õ? ??????
 
     time = np.arange(len(df_1_tmp))
     slope = dx_minute * 2
@@ -131,64 +130,20 @@ def make_dataframe(window_size, stride):
     tmp = tmp.reset_index(drop = True)
     tmp = tmp.dropna(axis = 0).reset_index(drop = True)
 
+    return tmp
 
-    temp_len = len(df_1_tmp) * 11
-    temp_TIME = pd.DataFrame({'TIME' : np.arange(temp_len)})
-    df_temp_all = pd.concat([df_1_tmp, df_2_tmp, df_3_tmp, df_4_tmp, df_5_tmp, df_6_tmp, df_7_tmp, df_8_tmp, df_9_tmp, df_10_tmp,df_11_tmp], axis = 0)
-    df_temp_all = df_temp_all.reset_index(drop = True).drop(columns = ['date','kst','longitude','latitude','TIME'])
-    df_temp_all = pd.concat([df_temp_all, temp_TIME], axis = 1)
-    return tmp, df_temp_all
+rs = 96
 
-
-
-
+def ML():
+    df_ML = make_dataframe(60,1)
+    X = df_ML.iloc[:, :9].values
+    y = df_ML['label'].values
+    X_train, X_test, y_train, y_test = train_test_split(X,y, test_size = 0.2, random_state = rs, shuffle = True)
 
 
-def ML(X_train, X_test, y_train, y_test):
-    knn = KNeighborsClassifier(n_neighbors = 10)
-    knn.fit(X_train, y_train)
-    knn_pred = knn.predict(X_test)
-    kn_ac = accuracy_score(y_test, knn_pred)
+    RFC = RandomForestClassifier(n_estimators=100, max_depth = 50, random_state = rs)
+    RFC.fit(X_train, y_train)
+    RFC_predict = RFC.predict(X_test)
+    RFC_ac = accuracy_score(y_test, RFC_predict)
 
-    lgbm = LGBMClassifier(n_estimators = 100)
-    lgbm.fit(X_train, y_train,
-            eval_metric = 'multi_logloss',
-            eval_set = [(X_test, y_test)])
-    lgbm_predict = lgbm.predict(X_test)
-    lgbm_ac = accuracy_score(y_test, lgbm_predict)
-
-    dtc = DecisionTreeClassifier()
-    dtc.fit(X_train, y_train)
-    dtc_pred = dtc.predict(X_test)
-    dtc_ac = accuracy_score(y_test, dtc_pred)
-
-    clf = RandomForestClassifier(n_estimators=100, max_depth = 50)
-    clf.fit(X_train, y_train)
-    clf_predict = clf.predict(X_test)
-    clf_ac = accuracy_score(y_test, clf_predict)
-
-    return kn_ac, lgbm_ac, dtc_ac, clf_ac
-
-def THRESHOLD(data):
-    if data>=797.314:
-        return 11
-    elif data>=740.9375:
-        return 10
-    elif data>=684.5565:
-        return 9
-    elif data>=628.1795:
-        return 8
-    elif data>=571.7965:
-        return 7
-    elif data>=515.4215:
-        return 6
-    elif data>=459.045:
-        return 5
-    elif data>=402.6645:
-        return 4
-    elif data>=346.28:
-        return 3
-    elif data>=289/9025:
-        return 2
-    else:
-        return 1
+    return RFC, RFC_ac

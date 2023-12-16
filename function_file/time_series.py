@@ -49,15 +49,17 @@ def time_series_dataframe():
         series = np.round(trend(time, slope = slope) + globals()['df_'+str(i)+'_tmp']['TEMP'] + dx*(i-2), 3)
         globals()['df_'+str(i)+'_tmp']['TEMP'] = series
 
-    #df_temp_all = pd.concat([df_1_tmp, df_2_tmp, df_3_tmp, df_4_tmp, df_5_tmp, df_6_tmp, df_7_tmp, df_8_tmp, df_9_tmp, df_10_tmp,df_11_tmp], axis = 0)
+    df_temp_all = pd.concat([df_1_tmp, df_2_tmp, df_3_tmp, df_4_tmp, df_5_tmp, df_6_tmp, df_7_tmp, df_8_tmp, df_9_tmp, df_10_tmp,df_11_tmp], axis = 0)
 
-    df_temp_all = pd.concat([df_1_tmp, df_4_tmp, df_9_tmp, df_1_tmp, df_3_tmp, df_10_tmp, df_1_tmp, df_2_tmp, df_9_tmp, df_10_tmp, df_1_tmp,df_5_tmp, df_2_tmp, df_7_tmp, df_9_tmp ], axis = 0)
+    #df_temp_all = pd.concat([df_1_tmp, df_4_tmp, df_9_tmp, df_1_tmp, df_3_tmp, df_10_tmp, df_1_tmp, df_2_tmp, df_9_tmp, df_10_tmp, df_1_tmp,df_5_tmp, df_2_tmp, df_7_tmp, df_9_tmp ], axis = 0)
     df_temp_all = df_temp_all.reset_index(drop = True)
-    temp_len = len(df_1_tmp) * 15
+    temp_len = len(df_1_tmp) * 11
     temp_TIME = pd.DataFrame({'TIME' : np.arange(temp_len)})
-    label = np.array([[int(i)] * 60436 for i in [1,4,9,1,3,10,1,2,9,10,1,5,2,7,9]]).reshape(-1)
+    #label = np.array([[int(i)] * 60436 for i in [1,4,9,1,3,10,1,2,9,10,1,5,2,7,9]]).reshape(-1)
+    label = np.array([[i] * 60436 for i in range(1,12)]).reshape(-1)
     temp_label = pd.DataFrame({'label' : label})
+    #temp_label = pd.DataFrame({'label' : label})
 
-    df_temp_all = pd.concat([df_temp_all, temp_label, temp_TIME], axis = 1)
+    df_temp_all = pd.concat([df_temp_all, temp_TIME, temp_label], axis = 1)
     
     return df_temp_all
