@@ -10,7 +10,7 @@ import warnings
 from function_file.ML_functions import *
 from function_file.time_series import time_series_dataframe
 import time
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 import os
 from sklearn.preprocessing import MinMaxScaler
 SEED = 42
@@ -86,12 +86,13 @@ class TimeSeiresDataset(Dataset):
 def multistep_time_series(temp_data, label_data, input_window, output_window):
     inout_seq = []
     label = []
+    batch_len= input_window + output_window
     L = len(temp_data)
-    for i in range(L-input_window):
-        train_seq = np.append(temp_data[i:i+input_window][:-output_window] , output_window * [0])
-        train_label = temp_data[i:i+input_window]
-        temp_label = max(label_data[i:i+input_window])
-        #train_label = input_data[i+output_window:i+tw+output_window]
+    for i in range(L-batch_len):
+        train_seq = temp_data[i:i+input_window]
+        train_label = temp_data[i+output_window:i+input_window+output_window]
+        temp_label = max(label_data[i+output_window:i+input_window+output_window])
+        
         inout_seq.append((train_seq ,train_label))
         label.append(temp_label)
     return torch.FloatTensor(inout_seq), label
@@ -143,6 +144,50 @@ def multistep_time_series(temp_data, label_data, input_window, output_window):
 
 #     return train_sequence.to(device), test_data.to(device)
 ############################################################################
+
+def get_batch(source, i,batch_size,input_window):
+    seq_len = min(batch_size, len(source) - 1 - i)
+    data = source[i:i+seq_len]    
+    input = torch.stack(torch.stack([item[0] for item in data]).chunk(input_window,1)) # 1 is feature size
+    target = torch.stack(torch.stack([item[1] for item in data]).chunk(input_window,1))
+    return input, target
+
+def train_tmp(model, train_data,batch_size, optimizer, criterion, input_window, output_window, epoch, scheduler):
+    model.train() # Turn on the train mode
+    total_loss = 0.
+    start_time = time.time()
+
+    for batch, i in enumerate(range(0, len(train_data) - 1, batch_size)):
+        data, targets = get_batch(train_data, i,batch_size, input_window)
+        optimizer.zero_grad()
+        output = model(data)        
+
+        if calculate_loss_over_all_values:
+            loss = criterion(output, targets)
+        else:
+            loss = criterion(output[-output_window:], targets[-output_window:])
+    
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+        optimizer.step()
+
+        total_loss += loss.item()
+
+        log_interval = int(len(train_data) / batch_size / 5)
+        if batch % log_interval == 0 and batch > 0:
+            cur_loss = total_loss / log_interval
+            elapsed = time.time() - start_time
+            print('| epoch {:3d} | {:5d}/{:5d} batches | '
+                  'lr {:02.6f} | {:5.2f} ms | '
+                  'loss {:5.5f} | ppl {:8.2f}'.format(
+                    epoch, batch, len(train_data) // batch_size, scheduler.get_lr()[0],
+                    elapsed * 1000 / log_interval,
+                    cur_loss, math.exp(cur_loss)))
+            total_loss = 0
+            start_time = time.time()
+            
+############################################################################
+
 
 #Train
 def train(model, train_dataloader, device, optimizer, criterion, epoch, scheduler):
@@ -240,37 +285,40 @@ def calculate_loss_and_plot(model, test_dataloader, device, criterion, output_wi
 
 calculate_loss_over_all_values =  False
 
-# def plot_and_loss(data_source):
-#     model.eval() 
-#     total_loss = 0.
-#     test_result = torch.Tensor(0)    
-#     truth = torch.Tensor(0)
-#     with torch.no_grad():
-#         for i in range(0, len(data_source) - 1):
-#             data, target = get_batch(data_source, i,1)
-#             # look like the model returns static values for the output window
-#             output = model(data)
-#             if calculate_loss_over_all_values:
-#                 total_loss += criterion(output, target).item()
-#             else:
-#                 total_loss += criterion(output[-output_window:], target[-output_window:]).item()
+def plot_and_loss(model, data_source, criterion,input_window, output_window, scaler_test):
+    model.eval() 
+    total_loss = 0.
+    test_result = torch.Tensor(0)    
+    truth = torch.Tensor(0)
+    result_to_ML = []
+    with torch.no_grad():
+        for i in tqdm(range(len(data_source)-1)) #range(0, len(data_source) - 1):
+            data, target = get_batch(data_source, i,1, input_window)
+            # look like the model returns static values for the output window
+            output = model(data)
+            if calculate_loss_over_all_values:
+                total_loss += criterion(output, target).item()
+            else:
+                total_loss += criterion(output[-output_window:], target[-output_window:]).item()
             
-#             test_result = torch.cat((test_result, output[-output_window:].view(-1).cpu()), 0) #todo: check this. -> looks good to me
-#             truth = torch.cat((truth, target[-output_window:].view(-1).cpu()), 0)
+            test_result = torch.cat((test_result, output[-output_window:].view(-1).cpu()), 0) #todo: check this. -> looks good to me
+            truth = torch.cat((truth, target[-output_window:].view(-1).cpu()), 0)
+            result_to_ML.append(output[-output_window:].view(-1).cpu().detach().numpy())
             
-#     test_result = scaler_test.inverse_transform(test_result.reshape(-1,1)).reshape(-1)
-#     truth = scaler_test.inverse_transform(truth.reshape(-1,1)).reshape(-1)
-
-#     plt.plot(test_result,color="red")
-#     plt.plot(truth,color="blue")
-#     #pyplot.plot(test_result-truth,color="green")
-#     #plt.ylim([600,900])
-#     plt.grid(True, which='both')
-#     plt.axhline(y=0, color='k')
-#     plt.show()
-#     plt.close()
+    test_result = scaler_test.inverse_transform(test_result.reshape(-1,1)).reshape(-1)
+    truth = scaler_test.inverse_transform(truth.reshape(-1,1)).reshape(-1)
     
-#     return test_result, truth, total_loss / i
+    plt.plot(test_result,label = 'Prediction')
+    plt.plot(truth,label = 'Truth')
+    #pyplot.plot(test_result-truth,color="green")
+    plt.ylim([600,900])
+    plt.grid(True, which='both')
+    plt.legend()
+    plt.axhline(y=0, color='k')
+    plt.show()
+    plt.close()
+    
+    return truth, test_result, result_to_ML, total_loss / i
 
 
 def evaluate(model, test_dataloader, device, criterion, output_window):
@@ -285,13 +333,13 @@ def evaluate(model, test_dataloader, device, criterion, output_window):
 
     return total_loss / (len(test_dataloader) * batch_size)
 
-def evaluate2(data_source):
+def evaluate2(model, data_source,criterion, output_window, input_window):
     model.eval() # Turn on the evaluation mode
     total_loss = 0.
     eval_batch_size = 512
     with torch.no_grad():
         for i in range(0, len(data_source) - 1, eval_batch_size):
-            data, targets = get_batch(data_source, i,eval_batch_size)
+            data, targets = get_batch(data_source, i,eval_batch_size, input_window)
             output = model(data)            
             if calculate_loss_over_all_values:
                 total_loss += len(data[0])* criterion(output, targets).cpu().item()
